@@ -634,7 +634,304 @@ HTTP 메시지 바디의 데이터를 InputStream을 사용해서 직접 읽을 
 
 
 
+// 메시지 바디에 있는 내용을 바이트코드로 얻을수있음
+
 ServletInputStream inputStream = request.getInputStream();
+
+
+
+//바이트를 문자로 변환하는 작업 (어떤 인코딩인지 명시 필요)
+
  String messageBody = StreamUtils.copyToString(inputStream,
 StandardCharsets.UTF_8);
 
+
+
+## HTTP 요청 데이터 - API 메시지 바디 - JSON
+
+content-type: application/json
+
+
+
+json도 문자데이터라 text/plain 과 방식은 동일
+
+
+
+ServletInputStream inputStream = request.getInputStream();
+ String messageBody = StreamUtils.copyToString(inputStream,
+StandardCharsets.UTF_8);
+ System.out.println("messageBody = " + messageBody);
+
+
+
+**읽어온 json 데이타를 객체형식으로 변환하는 방법**
+
+HelloData helloData = objectMapper.readValue(messageBody,
+HelloData.class);
+ System.out.println("helloData.username = " + helloData.getUsername());
+ System.out.println("helloData.age = " + helloData.getAge());
+
+
+
+
+
+# HttpServletResponse - 기본 사용법
+
+
+
+**HttpServletResponse 역할**
+HTTP 응답 메시지 생성
+HTTP 응답코드 지정
+헤더 생성
+바디 생성
+
+
+
+**편의 기능 제공**
+Content-Type, 쿠키, Redirect
+
+
+
+//[status-line]
+ response.setStatus(HttpServletResponse.SC_OK); //200 응답코드 지정
+
+//[response-headers]
+ response.setHeader("Content-Type", "text/plain;charset=utf-8");
+ response.setHeader("Cache-Control", "no-cache, no-store, mustrevalidate"); // 캐시무효화
+ response.setHeader("Pragma", "no-cache"); // 과거버전 캐시 무효화
+ response.setHeader("my-header","hello");
+
+
+
+ //[Header 편의 메서드]
+ content(response);
+ cookie(response);
+ redirect(response);
+
+
+
+//[message body]
+ PrintWriter writer = response.getWriter();
+ writer.println("ok");
+
+
+
+//content 설정
+
+response.setContentType("text/plain");
+ response.setCharacterEncoding("utf-8")
+
+
+
+// 쿠키 설정
+
+Cookie cookie = new Cookie("myCookie", "good");
+ cookie.setMaxAge(600); //600초
+ response.addCookie(cookie);
+
+
+
+//리다이렉트
+
+response.sendRedirect("/basic/hello-form.html");
+
+
+
+## HTTP 응답 데이터 - HTML
+
+단순 텍스트 응답
+
+
+
+
+
+response.setContentType("text/html");
+ response.setCharacterEncoding("utf-8");
+ PrintWriter writer = response.getWriter();
+ writer.println("<html>");
+ writer.println("<body>");
+ writer.println(" <div>안녕?</div>");
+ writer.println("</body>");
+ writer.println("</html>")
+
+
+
+HTTP 응답으로 HTML을 반환할 때는 content-type을 text/html 로 지정해야 한다.
+
+
+
+## HTTP 응답 데이터 - JSON
+
+
+
+response.setHeader("content-type", "application/json");
+ response.setCharacterEncoding("utf-8");
+
+ HelloData data = new HelloData();
+ data.setUsername("kim");
+ data.setAge(20);
+
+
+
+ //{"username":"kim","age":20} 객체를 JSON 형식으로 바꾸기
+
+ **String result = objectMapper.writeValueAsString(data);**
+ response.getWriter().write(result);
+
+
+
+HTTP 응답으로 JSON을 반환할 때는 content-type을 application/json 로 지정해야 한다.
+Jackson 라이브러리가 제공하는 **objectMapper.writeValueAsString()** 를 사용하면 객체를 JSON 
+문자로 변경할 수 있다
+
+
+
+application/json 은 스펙상 utf-8 형식을 사용하도록 정의되어 있다. 그래서 스펙에서 charset=utf-8 
+과 같은 추가 파라미터를 지원하지 않는다. 따라서 application/json 이라고만 사용해야지
+
+> application/json;charset=utf-8 이라고 전달하는 것은 의미 없는 파라미터를 추가한 것이 된다.
+> response.getWriter()를 사용하면 추가 파라미터를 자동으로 추가해버린다. 이때는
+> response.getOutputStream()으로 출력하면 그런 문제가 없다.
+
+
+
+## 서블릿으로 동적 HTML 코드 작성
+
+
+
+PrintWriter w = response.getWriter();
+
+w.write("<HTML>");
+
+//자바 코드로 HTML을 제공해야 함 
+
+// 이런식으로 html 코드를 작성하면 너무 귀찮고 번거로워짐 그래서 제공하는게 html 템플릿엔진 
+
+// 대표적으로 JSP , 타임리프 , Freemarker , Velocity가 존재
+
+
+
+## JSP
+
+
+
+**JSP 라이브러리 추가**
+
+
+
+//JSP 추가 시작
+implementation 'org.apache.tomcat.embed:tomcat-embed-jasper'
+implementation 'javax.servlet:jstl'
+//JSP 추가 끝
+
+
+
+**jsp 는 자바 파일이아니라 webapp 폴더 밑에 생성★** 
+
+
+
+****// JSP 파일 명시
+
+<%@ page contentType="text/html;charset=UTF-8" language="java" %>
+
+
+
+// java 코드를 넣을때는
+
+<% ~  %>
+
+// java 코드 출력
+
+<%= %>
+
+
+
+// 패키지 임포트
+
+<%@ page import="hello.servlet.domain.member.MemberRepository" %>
+<%@ page import="hello.servlet.domain.member.Member" %>
+
+
+
+**jsp 파일 에서도 서블릿의 request resposne 가 사용 가능하다.**
+
+
+
+- id=<%=member.getId()%>
+- username=<%=member.getUsername()%>
+- age=<%=member.getAge()%>
+
+
+
+// 루프 사용
+
+<%
+ for (Member member : members) {
+ out.write(" ");
+ out.write(" " + member.getId() + "");
+ out.write(" " + member.getUsername() + "");
+ out.write(" " + member.getAge() + "");
+ out.write(" ");
+ }
+%>
+
+
+
+**서블릿을 개발할때는 HTML을 만드는 작업이 지저분 하고 복잡**
+
+
+
+**JSP 사용해서 HTML 생성하는부분은 깔끔해졌지만**
+
+**JAVA 코드 및 데이터조회하는 다양한 코드가 JSP에 노출되어있고 JSP에 너무 많은 역할이 들어가있다.**
+
+
+
+위 단점을 해결하기 위해
+
+
+
+**MVC 패턴의 등장**
+
+
+**비즈니스 로직은 서블릿 처럼 다른곳에서 처리하고, JSP는 목적에 맞게 HTML로 화면(View)을 그리는**
+**일에 집중하도록 하자. 과거 개발자들도 모두 비슷한 고민이 있었고, 그래서 MVC 패턴이 등장했다. 우리도**
+**직접 MVC 패턴을 적용해서 프로젝트를 리팩터링 해보**자
+
+
+
+**하나의 서블릿이나 JSP만으로 비즈니스 로직과 뷰 렌더링까지 모두 처리하게 되면, 너무 많은 역할을**
+**하게되고, 결과적으로 유지보수가 어려워진다.**
+
+
+
+## Model , View , Controller
+
+
+
+MVC 패턴은 지금까지 학습한 것 처럼 하나의 서블릿이나, JSP로 처리하던 것을 컨트롤러(Controller)와
+
+뷰(View)라는 영역으로 서로 역할을 나눈 것을 말한다. 
+
+
+
+웹 애플리케이션은 보통 이 MVC 패턴을 사용한다.
+
+컨트롤러: HTTP 요청을 받아서 파라미터를 검증하고, 비즈니스 로직을 실행한다. 그리고 뷰에 전달할 결과
+데이터를 조회해서 모델에 담는다.
+
+
+
+모델: 뷰에 출력할 데이터를 담아둔다. 뷰가 필요한 데이터를 모두 모델에 담아서 전달해주는 덕분에 뷰는
+비즈니스 로직이나 데이터 접근을 몰라도 되고, 화면을 렌더링 하는 일에 집중할 수 있다.
+
+뷰: 모델에 담겨있는 데이터를 사용해서 화면을 그리는 일에 집중한다. 여기서는 HTML을 생성하는 부분을
+말한다.
+
+
+
+
+
+![MVC BEFORE AFTER](C:\Users\User\Desktop\Spring_2022\MVC BEFORE AFTER.png)
+
+![MVC BEFORE AFTER](C:\Users\User\Desktop\Spring_2022\mvc pattern_2.JPG)
