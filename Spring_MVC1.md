@@ -1919,11 +1919,11 @@ StandardCharsets.UTF_8);
  * HttpEntity: HTTP header, body 정보를 편라하게 조회
  * - 메시지 바디 정보를 직접 조회(@RequestParam X, @ModelAttribute X)
  * - HttpMessageConverter 사용 -> StringHttpMessageConverter 적용
-     *
+    *
  * 응답에서도 HttpEntity 사용 가능
  * - 메시지 바디 정보 직접 반환(view 조회X)
  * - HttpMessageConverter 사용 -> StringHttpMessageConverter 적용
-     */
+    */
      @PostMapping("/request-body-string-v3")
      public HttpEntity requestBodyStringV3(HttpEntity httpEntity) {
       String messageBody = httpEntity.getBody();
@@ -1977,11 +1977,11 @@ return new ResponseEntity("Hello World", responseHeaders, HttpStatus.CREATED)
  * @RequestBody
  * - 메시지 바디 정보를 직접 조회(@RequestParam X, @ModelAttribute X)
  * - HttpMessageConverter 사용 -> StringHttpMessageConverter 적용
-     *
+    *
  * @ResponseBody
  * - 메시지 바디 정보 직접 반환(view 조회X)
  * - HttpMessageConverter 사용 -> StringHttpMessageConverter 적용
-     */
+    */
      @ResponseBody
      @PostMapping("/request-body-string-v4")
      public String requestBodyStringV4(@RequestBody String messageBody) {
@@ -1992,15 +1992,399 @@ return new ResponseEntity("Hello World", responseHeaders, HttpStatus.CREATED)
 
 
 
+**@RequestBody**
 
-@RequestBody
 @RequestBody 를 사용하면 HTTP 메시지 바디 정보를 편리하게 조회할 수 있다. 참고로 헤더 정보가
 필요하다면 HttpEntity 를 사용하거나 @RequestHeader 를 사용하면 된다.
-이렇게 메시지 바디를 직접 조회하는 기능은 요청 파라미터를 조회하는 @RequestParam ,
-@ModelAttribute 와는 전혀 관계가 없다.
+
+
+
+이렇게 메시지 바디를 직접 조회하는 기능은 요청 파라미터를 조회하는 @RequestParam ,@ModelAttribute 와는 전혀 관계가 없다.
+
 요청 파라미터 vs HTTP 메시지 바디
+
+
+
 요청 파라미터를 조회하는 기능: @RequestParam , @ModelAttribute
+
 HTTP 메시지 바디를 직접 조회하는 기능: @RequestBody
-@ResponseBody
+
+
+
+
+
+**@ResponseBody**
+
 @ResponseBody 를 사용하면 응답 결과를 HTTP 메시지 바디에 직접 담아서 전달할 수 있다.
 물론 이 경우에도 view를 사용하지 않는다
+
+
+
+# HTTP 요청 메시지 - JSON
+
+
+
+/**
+
+ * {"username":"hello", "age":20}
+ * content-type: application/json
+    */
+    @Slf4j
+    @Controller
+    public class RequestBodyJsonController {
+     private ObjectMapper objectMapper = new ObjectMapper();
+     @PostMapping("/request-body-json-v1")
+     public void requestBodyJsonV1(HttpServletRequest request,
+    HttpServletResponse response) throws IOException {
+     ServletInputStream inputStream = request.getInputStream();
+     String messageBody = StreamUtils.copyToString(inputStream,
+    StandardCharsets.UTF_8);
+     log.info("messageBody={}", messageBody);
+     HelloData data = objectMapper.readValue(messageBody, HelloData.class);
+     log.info("username={}, age={}", data.getUsername(), data.getAge());
+     response.getWriter().write("ok");
+     }
+    }
+
+@ResponseBody
+@PostMapping("/request-body-json-v2")
+public String requestBodyJsonV2(@RequestBody String messageBody) throws
+IOException {
+ HelloData data = objectMapper.readValue(messageBody, HelloData.class);
+ log.info("username={}, age={}", data.getUsername(), data.getAge());
+ return "ok";
+}
+
+
+
+이전에 학습했던 @RequestBody 를 사용해서 HTTP 메시지에서 데이터를 꺼내고 messageBody에
+저장한다.
+
+문자로 된 JSON 데이터인 messageBody 를 objectMapper 를 통해서 자바 객체로 변환한다.
+문자로 변환하고 다시 json으로 변환하는 과정이 불편하다. @ModelAttribute처럼 한번에 객체로
+변환할 수는 없을까?
+
+
+
+@ResponseBody
+@PostMapping("/request-body-json-v3")
+public String requestBodyJsonV3(@RequestBody HelloData data) {
+ log.info("username={}, age={}", data.getUsername(), data.getAge());
+ return "ok";
+}
+
+
+
+@RequestBody 객체 파라미터
+@RequestBody HelloData data
+@RequestBody 에 직접 만든 객체를 지정할 수 있다.
+HttpEntity , @RequestBody 를 사용하면 HTTP 메시지 컨버터가 HTTP 메시지 바디의 내용을 우리가
+원하는 문자나 객체 등으로 변환해준다.
+HTTP 메시지 컨버터는 문자 뿐만 아니라 JSON도 객체로 변환해주는데, 우리가 방금 V2에서 했던 작업을
+대신 처리해준다.
+자세한 내용은 뒤에 HTTP 메시지 컨버터에서 다룬다.
+@RequestBody는 생략 불가능
+@ModelAttribute 에서 학습한 내용을 떠올려보자.
+스프링은 @ModelAttribute , @RequestParam 해당 생략시 다음과 같은 규칙을 적용한다.
+String , int , Integer 같은 단순 타입 = @RequestParam
+나머지 = @ModelAttribute (argument resolver 로 지정해둔 타입 외)
+따라서 이 경우 HelloData에 @RequestBody 를 생략하면 @ModelAttribute 가 적용되어버린다.
+HelloData data @ModelAttribute HelloData data
+따라서 생략하면 HTTP 메시지 바디가 아니라 요청 파라미터를 처리하게 된다.
+
+
+
+
+
+#HttpEntity 사용
+
+@ResponseBody
+@PostMapping("/request-body-json-v4")
+public String requestBodyJsonV4(HttpEntity httpEntity) {
+ HelloData data = httpEntity.getBody();
+ log.info("username={}, age={}", data.getUsername(), data.getAge());
+ return "ok";
+}
+
+
+
+
+
+/**
+
+ * @RequestBody 생략 불가능(@ModelAttribute 가 적용되어 버림)
+ * HttpMessageConverter 사용 -> MappingJackson2HttpMessageConverter (contenttype: application/json)
+    *
+ * @ResponseBody 적용
+ * - 메시지 바디 정보 직접 반환(view 조회X)
+ * - HttpMessageConverter 사용 -> MappingJackson2HttpMessageConverter 적용
+    (Accept: application/json)
+     */
+
+  ​
+
+
+
+@ResponseBody
+응답의 경우에도 @ResponseBody 를 사용하면 해당 객체를 HTTP 메시지 바디에 직접 넣어줄 수 있다.
+물론 이 경우에도 HttpEntity 를 사용해도 된다.
+
+@RequestBody 요청
+JSON 요청 HTTP 메시지 컨버터 객체
+
+@ResponseBody 응답
+객체 HTTP 메시지 컨버터 JSON 응답
+
+
+
+
+
+## HTTP 응답- 정적 리소스 , 뷰 템플릿
+
+
+
+
+
+
+
+응답 데이터는 이미 앞에서 일부 다룬 내용들이지만, 응답 부분에 초점을 맞추어서 정리해보자.
+스프링(서버)에서 응답 데이터를 만드는 방법은 크게 3가지이다.
+
+정적 리소스
+예) 웹 브라우저에 정적인 HTML, css, js을 제공할 때는, 정적 리소스를 사용한다.
+뷰 템플릿 사용
+예) 웹 브라우저에 동적인 HTML을 제공할 때는 뷰 템플릿을 사용한다.
+HTTP 메시지 사용
+HTTP API를 제공하는 경우에는 HTML이 아니라 데이터를 전달해야 하므로, HTTP 메시지 바디에
+JSON 같은 형식으로 데이터를 실어 보낸다.
+
+
+
+**정적 리소스**
+스프링 부트는 클래스패스의 다음 디렉토리에 있는 정적 리소스를 제공한다.
+/static , /public , /resources , /META-INF/resources
+
+src/main/resources 는 리소스를 보관하는 곳이고, 또 클래스패스의 시작 경로이다.
+따라서 다음 디렉토리에 리소스를 넣어두면 스프링 부트가 정적 리소스로 서비스를 제공한다.
+
+**정적 리소스 경로**
+src/main/resources/static
+
+다음 경로에 파일이 들어있으면
+src/main/resources/static/basic/hello-form.html
+
+웹 브라우저에서 다음과 같이 실행하면 된다.
+http://localhost:8080/basic/hello-form.html
+정적 리소스는 해당 파일을 변경 없이 그대로 서비스하는 것이다
+
+
+
+**뷰 템플릿**
+
+뷰 템플릿을 거쳐서 HTML이 생성되고, 뷰가 응답을 만들어서 전달한다.
+일반적으로 HTML을 동적으로 생성하는 용도로 사용하지만, 다른 것들도 가능하다. 뷰 템플릿이 만들 수
+있는 것이라면 뭐든지 가능하다.
+스프링 부트는 기본 뷰 템플릿 경로를 제공한다.
+뷰 템플릿 경로
+src/main/resources/templates
+
+
+
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"> // 타임리프 선언
+<head>
+ <meta charset="UTF-8">
+ <title>Title</title>
+</head>
+<body>
+<p th:text="${data}">empty</p> // data 안에 든 값을 empty 부분과 치환!
+</body>
+</html>
+
+
+
+@Controller
+public class ResponseViewController {
+ @RequestMapping("/response-view-v1")
+ public ModelAndView responseViewV1() {
+ ModelAndView mav = new ModelAndView("response/hello")
+ .addObject("data", "hello!");
+ return mav;
+ }
+ @RequestMapping("/response-view-v2")
+ public String responseViewV2(Model model) {
+ model.addAttribute("data", "hello!!");
+ return "response/hello";
+ }
+
+ @RequestMapping("/response/hello")
+ public void responseViewV3(Model model) {
+ model.addAttribute("data", "hello!!");
+ }
+}
+
+
+
+**String을 반환하는 경우 - View or HTTP 메시지**
+@ResponseBody 가 없으면 response/hello 로 뷰 리졸버가 실행되어서 뷰를 찾고, 렌더링 한다.
+@ResponseBody 가 있으면 뷰 리졸버를 실행하지 않고, HTTP 메시지 바디에 직접 response/hello 라는
+문자가 입력된다.
+여기서는 뷰의 논리 이름인 response/hello 를 반환하면 다음 경로의 뷰 템플릿이 렌더링 되는 것을
+확인할 수 있다.
+실행: templates/response/hello.html
+
+**Void를 반환하는 경우**
+@Controller 를 사용하고, HttpServletResponse , OutputStream(Writer) 같은 HTTP 메시지
+바디를 처리하는 파라미터가 없으면 요청 URL을 참고해서 논리 뷰 이름으로 사용
+요청 URL: /response/hello
+실행: templates/response/hello.html
+참고로 이 방식은 명시성이 너무 떨어지고 이렇게 딱 맞는 경우도 많이 없어서, 권장하지 않는다.
+
+
+
+build.gradle
+`implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'`
+스프링 부트가 자동으로 ThymeleafViewResolver 와 필요한 스프링 빈들을 등록한다. 그리고 다음
+설정도 사용한다. 이 설정은 기본 값 이기 때문에 변경이 필요할 때만 설정하면 된다.
+application.properties
+spring.thymeleaf.prefix=classpath:/templates/
+spring.thymeleaf.suffix=.html
+
+
+
+## HTTP 응답 - HTTP API, 메시지 바디에 직접 입력
+
+@Slf4j
+@Controller
+//@RestController
+public class ResponseBodyController {
+ @GetMapping("/response-body-string-v1")
+ public void responseBodyV1(HttpServletResponse response) throws IOException 
+{
+ response.getWriter().write("ok");
+ }
+ /**
+
+ * HttpEntity, ResponseEntity(Http Status 추가)
+ * @return
+    */
+     @GetMapping("/response-body-string-v2")
+     public ResponseEntity responseBodyV2() {
+     return new ResponseEntity<>("ok", HttpStatus.OK);
+     }
+
+     @ResponseBody
+     @GetMapping("/response-body-string-v3")
+     public String responseBodyV3() {
+     return "ok";
+     }
+
+     @GetMapping("/response-body-json-v1")
+     public ResponseEntity responseBodyJsonV1() {
+     HelloData helloData = new HelloData();
+     helloData.setUsername("userA");
+     helloData.setAge(20);
+     return new ResponseEntity<>(helloData, HttpStatus.OK);
+     }
+
+     @ResponseStatus(HttpStatus.OK) // HTTP 응답코드 지정!
+     @ResponseBody
+     @GetMapping("/response-body-json-v2")
+     public HelloData responseBodyJsonV2() {
+     HelloData helloData = new HelloData();
+     helloData.setUsername("userA");
+     helloData.setAge(20);
+     return helloData;
+     }
+    }
+
+
+
+## ArgumentResolver
+
+
+
+![RequestMappingHandlerAdapter](C:\Users\User\Desktop\Spring_2022\RequestMappingHandlerAdapter.JPG)생각해보면, 애노테이션 기반의 컨트롤러는 매우 다양한 파라미터를 사용할 수 있었다.
+HttpServletRequest , Model 은 물론이고, @RequestParam , @ModelAttribute 같은 애노테이션
+그리고 @RequestBody , HttpEntity 같은 HTTP 메시지를 처리하는 부분까지 매우 큰 유연함을
+보여주었다.
+이렇게 파라미터를 유연하게 처리할 수 있는 이유가 바로 ArgumentResolver 덕분이다.
+애노테이션 기반 컨트롤러를 처리하는 **RequestMappingHandlerAdaptor** 는 바로 이 
+
+**ArgumentResolver 를 호출**해서 컨트롤러(핸들러)가 필요로 하는 **다양한 파라미터의 값(객체)을 생성**한다. 
+그리고 이렇게 파리미터의 값이 모두 준비되면 컨트롤러를 호출하면서 값을 넘겨준다.
+스프링은 30개가 넘는 ArgumentResolver 를 기본으로 제공한다.
+어떤 종류들이 있는지 살짝 코드로 확인만 해보자.
+
+
+
+//1. 클라이언트가 RequestMapping에 명시되어있는 url 호출
+
+//2. Argument Resolver에게 핸들러가필요로 하는 파라미터 지원되는지 물어봄
+
+//3. 지원된다면 해당되는 파라미터로 넘겨줄데이터를 ArgumentResolver가 다 생성 준비
+
+//4. 그때 핸들러어댑터가 컨트롤러를 호출 Argument를 통해 생성된 파라미터에 데이터 주입
+
+동작 방식
+ArgumentResolver 의 supportsParameter() 를 호출해서 해당 파라미터를 지원하는지 체크하고, 
+지원하면 resolveArgument() 를 호출해서 실제 객체를 생성한다. 그리고 이렇게 생성된 객체가 컨트롤러
+호출시 넘어가는 것이다.
+그리고 원한다면 여러분이 직접 이 인터페이스를 **확장**해서 원하는 **ArgumentResolver** 를 만들 수도 있다. 
+실제 확장하는 예제는 향후 로그인 처리에서 진행하겠다
+
+
+
+**ReturnValueHandler**
+
+
+
+HandlerMethodReturnValueHandler 를 줄여서 ReturnValueHandle 라 부른다.
+ArgumentResolver 와 비슷한데, 이것은 응답 값을 변환하고 처리한다.
+컨트롤러에서 String으로 뷰 이름을 반환해도, 동작하는 이유가 바로 ReturnValueHandler 덕분이다.
+어떤 종류들이 있는지 살짝 코드로 확인만 해보자.
+스프링은 10여개가 넘는 ReturnValueHandler 를 지원한다.
+예) ModelAndView , @ResponseBody , HttpEntity , String
+
+
+
+요청의 경우 @RequestBody 를 처리하는 ArgumentResolver 가 있고, HttpEntity 를 처리하는
+ArgumentResolver 가 있다. 이 ArgumentResolver 들이 HTTP 메시지 컨버터를 사용해서 필요한
+객체를 생성하는 것이다. (어떤 종류가 있는지 코드로 살짝 확인해보자)
+
+
+
+응답의 경우 @ResponseBody 와 HttpEntity 를 처리하는 ReturnValueHandler 가 있다. 그리고
+여기에서 HTTP 메시지 컨버터를 호출해서 응답 결과를 만든다.
+스프링 MVC는 @RequestBody @ResponseBody 가 있으면
+
+RequestResponseBodyMethodProcessor (ArgumentResolver)
+HttpEntity 가 있으면 HttpEntityMethodProcessor (ArgumentResolver)를 사용한다
+
+확장
+스프링은 다음을 모두 인터페이스로 제공한다. 따라서 필요하면 언제든지 기능을 확장할 수 있다.
+HandlerMethodArgumentResolver
+HandlerMethodReturnValueHandler
+HttpMessageConverter
+
+스프링이 필요한 대부분의 기능을 제공하기 때문에 실제 기능을 확장할 일이 많지는 않다. 기능 확장은
+**WebMvcConfigurer** 를 상속 받아서 스프링 빈으로 등록하면 된다. 실제 자주 사용하지는 않으니 실제 기능
+확장이 필요할 때 **WebMvcConfigurer** 를 검색해보자.
+
+
+
+@Bean
+public WebMvcConfigurer webMvcConfigurer() {
+ return new WebMvcConfigurer() {
+ @Override
+ public void addArgumentResolvers(List
+resolvers) {
+ //...
+ }
+ @Override
+ public void extendMessageConverters(List>
+converters) {
+ //...
+ }
+ };
+}
