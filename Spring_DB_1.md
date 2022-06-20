@@ -450,6 +450,50 @@ rs.getInt("money") : 현재 커서가 가리키고 있는 위치의 money 데이
 3-1 에서 rs.next() 를 호출한다.
 3-2 의 결과로 cursor 가 다음으로 이동한다. 이 경우 cursor 가 가리키는 데이터가 없으므로 false 를
 반환한다.
-findById() 에서는 회원 하나를 조회하는 것이 목적이다. 따라서 조회 결과가 항상 1건이므로 while
-대신에 if 를 사용한다. 다음 SQL을 보면 PK인 member_id 를 항상 지정하는 것을 확인할 수 있다.
+
+findById() 에서는 회원 하나를 조회하는 것이 목적이다. 따라서 **조회 결과가 항상 1건이므로 while**
+**대신에 if 를 사용**한다. 다음 SQL을 보면 PK인 member_id 를 항상 지정하는 것을 확인할 수 있다.
 SQL: select * from member where member_id = ?
+
+
+
+## JDBC 개발 - 수정, 삭제
+
+```
+public void update(String memberId, int money) throws SQLException {
+    String sql = "update member set money=? where member_id=?";
+
+    Connection con = null;
+    PreparedStatement pstmt = null;
+
+    try {
+        con = getConnection();
+        pstmt = con.prepareStatement(sql);
+        pstmt.setInt(1, money);
+        pstmt.setString(2, memberId);
+        int resultSize = pstmt.executeUpdate();
+        log.info("resultSize={}", resultSize);
+    } catch (SQLException e) {
+        log.error("db error", e);
+        throw e;
+    } finally {
+        close(con, pstmt, null);
+    }
+}
+```
+
+```
+//delete
+repository.delete(member.getMemberId());
+assertThatThrownBy(() -> repository.findById(member.getMemberId()))
+        .isInstanceOf(NoSuchElementException.class);
+```
+
+회원을 삭제한 다음 findById() 를 통해서 조회한다. 회원이 없기 때문에 NoSuchElementException 이
+발생한다. assertThatThrownBy 는 해당 예외가 발생해야 검증에 성공한다.
+
+> 참고
+> 마지막에 회원을 삭제하기 때문에 테스트가 정상 수행되면, 이제부터는 같은 테스트를 반복해서 실행할 수
+> 있다. 물론 테스트 중간에 오류가 발생해서 삭제 로직을 수행할 수 없다면 테스트를 반복해서 실행할 수
+> 없다.
+> 트랜잭션을 활용하면 이 문제를 깔끔하게 해결할 수 있는데, 자세한 내용은 뒤에서 설명한다
