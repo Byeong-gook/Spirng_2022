@@ -877,3 +877,20 @@ MemberRepositoryV1 repository;
 **DriverManagerDataSource**를  **HikariDataSource** 로 변경해도 MemberRepositoryV1 의 코드는 전혀
 변경하지 않아도 된다. MemberRepositoryV1 는 **DataSource 인터페이스에만 의존**하기 때문이다. 
 이것이 DataSource 를 사용하는 장점이다.(DI + OCP)
+
+
+
+정리 
+
+
+
+**커넥션 풀에서 가져온 커넥션을 사용이 끝난뒤 종료하더라도 그 커넥션을 종료하는것이아닌 커넥션 풀에 다시 반환하는것이다.**
+
+
+
+**DriverManagerDataSource를 커넥션을 사용할때마다 생성하지만**
+
+**HikariDataSource를 사용하면 커넥션을 미리만들어놓은것을 재사용한다.**
+
+
+

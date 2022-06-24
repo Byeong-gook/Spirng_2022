@@ -56,5 +56,6 @@ class MemberRepositoryV1Test {
                 .isInstanceOf(NoSuchElementException.class);
 
 
+
     }
 }
