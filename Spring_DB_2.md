@@ -2013,3 +2013,1474 @@ SQL을 자바 코드로 작성하기 때문에 SQL 라인이 코드를 넘어갈
 >
 > JOOQ라는 기술도 동적쿼리 문제를 편리하게 해결해주지만 사용자가 많지 않아서 강의에서 다루지는
 > 않는다
+
+
+
+
+
+## 데이터 접근 기술 - 테스트
+
+**테스트 - 데이터베이스 연동**
+
+
+
+데이터 접근 기술에 대해서 더 알아보기 전에 데이터베이스에 연동하는 테스트에 대해서 알아보자. 
+
+데이터 접근 기술은 실제 데이터베이스에 접근해서 데이터를 잘 저장하고 조회할 수 있는지 확인하는 것이
+필요하다.
+
+지금부터 테스트를 실행할 때 실제 데이터베이스를 연동해서 진행해보자.
+
+앞서 개발한 ItemRepositoryTest 를 통해서 테스트를 진행할 것이다.
+테스트를 실행하기 전에 먼저 지금까지 설정한 application.properties 를 확인해보자.
+
+
+
+**@SpringBootTest**
+
+****@SpringBootTest
+class ItemRepositoryTest {}
+
+ItemRepositoryTest 는 @SpringBootTest 를 사용한다. 
+
+@SpringBootTest 는
+@SpringBootApplication 를 찾아서 설정으로 사용한다.
+
+@SpringBootApplication
+@Slf4j
+//@Import(MemoryConfig.class)
+//@Import(JdbcTemplateV1Config.class)
+//@Import(JdbcTemplateV2Config.class)
+@Import(JdbcTemplateV3Config.class)
+@SpringBootApplication(scanBasePackages = "hello.itemservice.web")
+public class ItemServiceApplication {}
+
+@SpringBootApplication 설정이 과거에는 MemoryConfig.class 를 사용하다가 이제는
+JdbcTemplateV3Config.class 를 사용하도록 변경되었다. 따라서 테스트도 JdbcTemplate 을 통해
+실제 데이터베이스를 호출하게 된다.
+
+MemoryItemRepository JdbcTemplateItemRepositoryV3
+
+
+
+테스트 실행
+ItemRepositoryTest 테스트 전체를 실행하자.
+주의! H2 데이터베이스 서버가 실행되어 있어야 한다.
+실행 결과
+updateitem() : 성공
+save() : 성공
+findItems() : 실패
+findItems() 는 다음과 같은 오류를 내면서 실패했다. 
+
+
+
+
+
+java.lang.AssertionError: 
+Expecting actual:
+ [Item(id=7, itemName=ItemTest, price=10000, quantity=10),
+ Item(id=8, itemName=itemA, price=10000, quantity=10),
+ Item(id=9, itemName=itemB, price=20000, quantity=20),
+ Item(id=10, itemName=itemA, price=10000, quantity=10),
+...
+
+
+
+
+
+**findItems() 코드를 확인해보면 상품을 3개 저장하고, 조회한다.**
+
+
+```
+@Test
+void findItems() {
+    //given
+    Item item1 = new Item("itemA-1", 10000, 10);
+    Item item2 = new Item("itemA-2", 20000, 20);
+    Item item3 = new Item("itemB-1", 30000, 30);
+
+    itemRepository.save(item1);
+    itemRepository.save(item2);
+    itemRepository.save(item3);
+
+    //둘 다 없음 검증
+    test(null, null, item1, item2, item3);
+    test("", null, item1, item2, item3);
+
+    //itemName 검증
+    test("itemA", null, item1, item2);
+    test("temA", null, item1, item2);
+    test("itemB", null, item3);
+
+    //maxPrice 검증
+    test(null, 10000, item1);
+
+    //둘 다 있음 검증
+    test("itemA", 10000, item1);
+}
+```
+
+결과적으로 테스트에서 저정한 3개의 데이터가 조회 되어야 하는데, 기대보다 더 많은 데이터가
+
+조회되었다
+
+
+
+**실패 원인**
+
+왜 이런 문제가 발생하는 것일까?
+
+혹시 테스트를 실행할 때 TestDataInit 이 실행되는 것은 아닐까? 이 문제는 아니다. TestDataInit 은
+프로필이 local 일때만 동작하는데, 테스트 케이스를 실행할 때는 프로필이
+spring.profiles.active=test 이기 때문에 초기화 데이터가 추가되지는 않는다.
+문제는 H2 데이터베이스에 이미 과거에 서버를 실행하면서 저장했던 데이터가 보관되어 있기 때문이다. 이
+데이터가 현재 테스트에 영향을 준다.
+
+H2 데이터베이스 콘솔을 열어서 데이터를 확인해보자
+
+
+
+## 테스트 - 데이터베이스 분리
+
+로컬에서 사용하는 애플리케이션 서버와 테스트에서 같은 데이터베이스를 사용하고 있으니 테스트에서
+문제가 발생한다.
+
+이런 문제를 해결하려면 테스트를 다른 환경과 철저하게 분리해야 한다.
+
+가장 간단한 방법은 테스트 전용 데이터베이스를 별도로 운영하는 것이다.
+
+H2 데이터베이스를 용도에 따라 2가지로 구분하면 된다.
+jdbc:h2:tcp://localhost/~/test local에서 접근하는 서버 전용 데이터베이스
+jdbc:h2:tcp://localhost/~/testcase test 케이스에서 사용하는 전용 데이터베이스
+
+
+
+```
+@Test
+void findItems() {
+    //given
+    Item item1 = new Item("itemA-1", 10000, 10);
+    Item item2 = new Item("itemA-2", 20000, 20);
+    Item item3 = new Item("itemB-1", 30000, 30);
+
+    itemRepository.save(item1);
+    itemRepository.save(item2);
+    itemRepository.save(item3);
+
+    //둘 다 없음 검증
+    test(null, null, item1, item2, item3);
+    test("", null, item1, item2, item3);
+
+    //itemName 검증
+    test("itemA", null, item1, item2);
+    test("temA", null, item1, item2);
+    test("itemB", null, item3);
+
+    //maxPrice 검증
+    test(null, 10000, item1);
+
+    //둘 다 있음 검증
+    test("itemA", 10000, item1);
+}
+```
+
+**이제 테스트를 실행해보자!**
+
+findItems() 테스트만 단독으로 실행해보자
+처음에는 실행에 성공한다.
+그런데 같은 findItems() 테스트를 다시 실행하면 테스트에 실패한다.
+
+테스트를 2번째 실행할 때 실패하는 이유는 testcase 데이터베이스에 접속해서 item 테이블의
+데이터를 확인하면 알 수 있다.
+
+처음 테스트를 실행할 때 저장한 데이터가 계속 남아있기 때문에 두번째 테스트에 영향을 준 것이다.
+이 문제는 save() 같은 다른 테스트가 먼저 실행되고 나서 findItems() 를 실행할 때도 나타난다. 
+
+다른 테스트에서 이미 데이터를 추가했기 때문이다. 
+
+
+
+결과적으로 테스트 데이터가 오염된 것이다.
+
+이 문제를 해결하려면 각각의 테스트가 끝날 때 마다 해당 테스트에서 추가한 데이터를 삭제해야 한다. 
+
+그래야 다른 테스트에 영향을 주지 않는다.
+테스트에서 매우 중요한 원칙은 다음과 같다.
+테스트는 다른 테스트와 격리해야 한다.
+테스트는 반복해서 실행할 수 있어야 한다.
+
+물론 테스트가 끝날 때 마다 추가한 데이터에 DELETE SQL 을 사용해도 되겠지만, 이 방법도 궁극적인
+해결책은 아니다. 
+
+만약 테스트 과정에서 데이터를 이미 추가했는데, 
+
+
+
+테스트가 실행되는 도중에 예외가
+발생하거나 애플리케이션이 종료되어 버려서 테스트 종료 시점에 DELETE SQL 을 호출하지 못할 수 도
+있다! 그러면 결국 데이터가 남아있게 된다.
+
+이런 문제를 어떻게 해결할 수 있을까.
+
+
+
+## 테스트 - 데이터 롤백
+
+
+
+**트랜잭션과 롤백 전략**
+
+****트랜잭션과 롤백 전략
+이때 도움이 되는 것이 바로 트랜잭션이다.
+
+테스트가 끝나고 나서 트랜잭션을 강제로 롤백해버리면 데이터가 깔끔하게 제거된다.
+테스트를 하면서 데이터를 이미 저장했는데, 중간에 테스트가 실패해서 롤백을 호출하지 못해도 괜찮다. 
+트랜잭션을 커밋하지 않았기 때문에 데이터베이스에 해당 데이터가 반영되지 않는다.
+이렇게 트랜잭션을 활용하면 테스트가 끝나고 나서 데이터를 깔끔하게 원래 상태로 되돌릴 수 있다
+
+
+
+예를 들어서 다음 순서와 같이 각각의 테스트 실행 직전에 트랜잭션을 시작하고, 각각의 테스트 실행 직후에
+트랜잭션을 롤백해야 한다. 그래야 다음 테스트에 데이터로 인한 영향을 주지 않는다.
+
+1. 트랜잭션 시작
+2. 테스트 A 실행
+3. 트랜잭션 롤백
+4. 트랜잭션 시작
+5. 테스트 B 실행
+6. 트랜잭션 롤백
+
+  테스트는 각각의 테스트 실행 전 후로 동작하는 @BeforeEach , @AfterEach 라는 편리한 기능을
+  제공한다.
+  테스트에 트랜잭션과 롤백을 적용하기 위해 다음 코드를 추가하자.
+
+```
+@SpringBootTest
+class ItemRepositoryTest {
+
+    @Autowired
+    ItemRepository itemRepository;
+
+    @Autowired
+    PlatformTransactionManager transactionManager; // dataSource , transactionManager는 SpringBoot가 자동으로 Bean으로 등록
+
+    TransactionStatus status;
+
+
+    @BeforeEach
+    void beforEach() {
+        //트랜잭션 시작
+        status = transactionManager.getTransaction(new DefaultTransactionDefinition());
+    }
+
+    @AfterEach
+    void afterEach() {
+        //MemoryItemRepository 의 경우 제한적으로 사용
+        if (itemRepository instanceof MemoryItemRepository) {
+            ((MemoryItemRepository) itemRepository).clearStore();
+        }
+
+        //트랜잭션 롤백
+        transactionManager.rollback(status);
+    }
+
+}
+```
+
+트랜잭션 관리자는 PlatformTransactionManager 를 주입 받아서 사용하면 된다. 참고로 스프링 부트는
+자동으로 적절한 트랜잭션 매니저를 스프링 빈으로 등록해준다. (앞서 학습한 스프링 부트의 자동 리소스
+등록 장을 떠올려보자.)
+
+@BeforeEach : 각각의 테스트 케이스를 실행하기 직전에 호출된다. 따라서 여기서 트랜잭션을 시작하면
+된다. 그러면 각각의 테스트를 트랜잭션 범위 안에서 실행할 수 있다.
+
+transactionManager.getTransaction(new DefaultTransactionDefinition()) 로
+트랜잭션을 시작한다.
+
+@AfterEach : 각각의 테스트 케이스가 완료된 직후에 호출된다. 따라서 여기서 트랜잭션을 롤백하면 된다. 
+그러면 데이터를 트랜잭션 실행 전 상태로 복구할 수 있다.
+
+transactionManager.rollback(status) 로 트랜잭션을 롤백한다.
+
+테스트를 실행하기 전에 먼저 테스트에 영향을 주지 않도록 testcase 데이터베이스에 접근해서 기존
+데이터를 깔끔하게 삭제하자
+
+
+
+## 테스트 - @Transactional
+
+스프링은 테스트 데이터 초기화를 위해 트랜잭션을 적용하고 롤백하는 방식을 @Transactional
+애노테이션 하나로 깔끔하게 해결해준다.
+이전에 테스트에 트랜잭션과 롤백을 위해 추가했던 코드들을 주석 처리하자.
+
+
+
+```
+@Transactional
+@SpringBootTest
+class ItemRepositoryTest {
+
+    @Autowired
+    ItemRepository itemRepository;
+
+/*    @Autowired
+    PlatformTransactionManager transactionManager; // dataSource , transactionManager는 SpringBoot가 자동으로 Bean으로 등록
+    TransactionStatus status;
+
+
+    @BeforeEach
+    void beforEach() {
+        //트랜잭션 시작
+        status = transactionManager.getTransaction(new DefaultTransactionDefinition());
+    }*/
+
+    @AfterEach
+    void afterEach() {
+        //MemoryItemRepository 의 경우 제한적으로 사용
+        if (itemRepository instanceof MemoryItemRepository) {
+            ((MemoryItemRepository) itemRepository).clearStore();
+        }
+
+        //트랜잭션 롤백
+        //transactionManager.rollback(status);
+    }
+```
+
+테스트를 실행하기 전에 먼저 테스트에 영향을 주지 않도록 testcase 데이터베이스에 접근해서 기존
+데이터를 깔끔하게 삭제하자.
+
+**모든 ITEM 데이터 삭제**
+delete from item
+
+그리고 다음 쿼리를 실행해서 데이터가 모두 삭제되었는지 확인하자.
+SELECT * FROM ITEM
+
+ItemRepositoryTest 실행
+이제 ItemRepositoryTest 의 테스트를 모두 실행해보자. 여러번 반복해서 실행해도 테스트가 성공하는
+것을 확인할 수 있다.
+
+@Transactional 원리
+
+스프링이 제공하는 @Transactional 애노테이션은 로직이 성공적으로 수행되면 커밋하도록 동작한다.
+그런데 @Transactional 애노테이션을 테스트에서 사용하면 아주 특별하게 동작한다.
+
+@Transactional 이 테스트에 있으면 스프링은 테스트를 트랜잭션 안에서 실행하고, 테스트가 끝나면
+트랜잭션을 자동으로 롤백시켜 버린다!
+
+![Transactional 예시~](C:\Users\User\Desktop\Spring_2022\Transactional 예시~.JPG)
+
+findItems() 를 예시로 알아보자.
+
+
+
+1. 테스트에 @Transactional 애노테이션이 테스트 메서드나 클래스에 있으면 먼저 트랜잭션을
+  시작한다.
+2. 테스트를 로직을 실행한다. 테스트가 끝날 때 까지 모든 로직은 트랜잭션 안에서 수행된다.
+  트래잭션은 기본적으로 전파되기 때문에, 리포지토리에서 사용하는 JdbcTemplate도 같은
+  트랜잭션을 사용한다.
+3. 테스트 실행 중에 INSERT SQL을 사용해서 item1 , item2 , item3 를 데이터베이스에 저장한다.
+  물론 테스트가 리포지토리를 호출하고, 리포지토리는 JdbcTemplate을 사용해서 데이터를 저장한다.
+4. 검증을 위해서 SELECT SQL로 데이터를 조회한다. 여기서는 앞서 저장한 item1 , item2 , item3 이
+  조회되었다.
+  SELECT SQL도 같은 트랜잭션을 사용하기 때문에 저장한 데이터를 조회할 수 있다. 다른
+  트랜잭션에서는 해당 데이터를 확인할 수 없다.
+  여기서 assertThat() 으로 검증이 모두 끝난다.
+5. @Transactional 이 테스트에 있으면 테스트가 끝날때 트랜잭션을 강제로 롤백한다.
+6. 롤백에 의해 앞서 데이터베이스에 저장한 item1 , item2 , item3 의 데이터가 제거된다.
+> 참고
+> 테스트 케이스의 메서드나 클래스에 @Transactional 을 직접 붙여서 사용할 때 만 이렇게 동작한다.
+> 그리고 트랜잭션을 테스트에서 시작하기 때문에 서비스, 리포지토리에 있는 @Transactional 도
+> 테스트에서 시작한 트랜잭션에 참여한다. (이 부분은 뒤에 트랜잭션 전파에서 더 자세히 설명하겠다. 지금은
+> 테스트에서 트랜잭션을 실행하면 테스트 실행이 종료될 때 까지 테스트가 실행하는 모든 코드가 같은
+> 트랜잭션 범위에 들어간다고 이해하면 된다. 같은 범위라는 뜻은 쉽게 이야기해서 같은 트랜잭션을
+> 사용한다는 뜻이다. 그리고 같은 트랜잭션을 사용한다는 것은 같은 커넥션을 사용한다는 뜻이기도 하다.)
+> 정리
+> 테스트가 끝난 후 개발자가 직접 데이터를 삭제하지 않아도 되는 편리함을 제공한다.
+> 테스트 실행 중에 데이터를 등록하고 중간에 테스트가 강제로 종료되어도 걱정이 없다. 이 경우 트랜잭션을
+> 커밋하지 않기 때문에, 데이터는 자동으로 롤백된다. (보통 데이터베이스 커넥션이 끊어지면 자동으로
+> 롤백되어 버린다.)
+> 트랜잭션 범위 안에서 테스트를 진행하기 때문에 동시에 다른 테스트가 진행되어도 서로 영향을 주지 않는
+> 장점이 있다.
+> @Transactional 덕분에 아주 편리하게 다음 원칙을 지킬수 있게 되었다.
+> 테스트는 다른 테스트와 격리해야 한다.
+> 테스트는 반복해서 실행할 수 있어야 한다.
+
+
+
+강제로 커밋하기 - @Commit
+@Transactional 을 테스트에서 사용하면 테스트가 끝나면 바로 롤백되기 때문에 테스트 과정에서 저장한
+모든 데이터가 사라진다. 당연히 이렇게 되어야 하지만, 정말 가끔은 데이터베이스에 데이터가 잘
+보관되었는지 최종 결과를 눈으로 확인하고 싶을 때도 있다. 이럴 때는 다음과 같이 @Commit 을 클래스
+또는 메서드에 붙이면 테스트 종료후 롤백 대신 커밋이 호출된다. 참고로 @Rollback(value = false) 를
+사용해도 된다.
+
+import org.springframework.test.annotation.Commit;
+@Commit
+@Transactional
+@SpringBootTest
+class ItemRepositoryTest {}
+
+
+
+## 테스트 - 임베디드 모드 DB
+
+테스트 케이스를 실행하기 위해서 별도의 데이터베이스를 설치하고, 운영하는 것은 상당히 번잡한
+작업이다. 단순히 테스트를 검증할 용도로만 사용하기 때문에 테스트가 끝나면 데이터베이스의 데이터를
+모두 삭제해도 된다. 더 나아가서 테스트가 끝나면 데이터베이스 자체를 제거해도 된다.
+
+**임베디드 모드**
+
+H2 데이터베이스는 자바로 개발되어 있고, JVM안에서 메모리 모드로 동작하는 특별한 기능을 제공한다. 
+그래서 애플리케이션을 실행할 때 H2 데이터베이스도 해당 JVM 메모리에 포함해서 함께 실행할 수 있다. 
+DB를 애플리케이션에 내장해서 함께 실행한다고 해서 임베디드 모드(Embedded mode)라 한다. 물론
+애플리케이션이 종료되면 임베디드 모드로 동작하는 H2 데이터베이스도 함께 종료되고, 데이터도 모두
+사라진다. 쉽게 이야기해서 애플리케이션에서 자바 메모리를 함께 사용하는 라이브러리처럼 동작하는
+것이다.
+이제 H2 데이터베이스를 임베디드 모드로 사용해보자.
+
+
+
+```
+package hello.itemservice;
+
+import hello.itemservice.config.*;
+import hello.itemservice.repository.ItemRepository;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Profile;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+
+import javax.sql.DataSource;
+import javax.xml.crypto.Data;
+
+
+//@Import(MemoryConfig.class)
+//@Import(JdbcTemplateV1Config.class)
+@Slf4j
+@Import(JdbcTemplateV3Config.class)
+@SpringBootApplication(scanBasePackages = "hello.itemservice.web")
+public class ItemServiceApplication {
+
+   public static void main(String[] args) {
+      SpringApplication.run(ItemServiceApplication.class, args);
+   }
+
+   @Bean
+   @Profile("local")
+   public TestDataInit testDataInit(ItemRepository itemRepository) {
+      return new TestDataInit(itemRepository);
+   }
+
+   @Bean
+   @Profile("test")
+   public DataSource dataSource() {
+      log.info("메모리 데이터베이스 초기화");
+      DriverManagerDataSource dataSource = new DriverManagerDataSource();
+      dataSource.setDriverClassName("org.h2.Driver");
+      dataSource.setUrl("jdbc:h2:mem:db;DB_CLOSE_DELAY=-1");
+      dataSource.setUsername("sa");
+      dataSource.setPassword("");
+      return dataSource;
+      
+   }
+}
+
+```
+
+
+
+
+
+
+
+@Profile("test")
+프로필이 test 인 경우에만 데이터소스를 스프링 빈으로 등록한다.
+테스트 케이스에서만 이 데이터소스를 스프링 빈으로 등록해서 사용하겠다는 뜻이다.
+dataSource()
+jdbc:h2:mem:db : 이 부분이 중요하다. 데이터소스를 만들때 이렇게만 적으면 임베디드 모드(메모리
+모드)로 동작하는 H2 데이터베이스를 사용할 수 있다.
+DB_CLOSE_DELAY=-1 : 임베디드 모드에서는 데이터베이스 커넥션 연결이 모두 끊어지면
+데이터베이스도 종료되는데, 그것을 방지하는 설정이다.
+이 데이터소스를 사용하면 메모리 DB를 사용할 수 있다.
+
+**실행**
+이제 ItemRepositoryTest 테스트를 메모리 DB를 통해 실행해보자.
+앞에서 설정은 끝났다. 이제 테스트를 실행만 하면 새로 등록한 메모리 DB에 접근하는 데이터소스를
+사용하게 된다.
+확실하게 하기 위해서 H2 데이터베이스 서버는 잠시 꺼두자
+
+**실행 결과**
+org.springframework.jdbc.BadSqlGrammarException: PreparedStatementCallback; bad 
+SQL grammar []; nested exception is org.h2.jdbc.JdbcSQLSyntaxErrorException: 
+Table "ITEM" not found; SQL statement:
+insert into item (item_name, price, quantity) values (?, ?, ?) [42102-200]
+...
+Caused by: org.h2.jdbc.JdbcSQLSyntaxErrorException: Table "ITEM" not found; SQL 
+statement:
+insert into item (item_name, price, quantity) values (?, ?, ?) [42102-200]
+
+
+
+
+
+그런데 막상 실행해보면 다음과 같은 오류를 확인 할 수 있다.
+
+
+
+참고로 **오류는 항상 아래에 있는 오류 정보가 더 근본 원인에 가까운 오류 로그**이다.
+
+Table "ITEM" not found 이 부분이 핵심이다. 데이터베이스 테이블이 없는 것이다.
+생각해보면 메모리 DB에는 아직 테이블을 만들지 않았다.
+
+테스트를 실행하기 전에 테이블을 먼저 생성해주어야 한다. 수동으로 할 수도 있지만 스프링 부트는 이
+문제를 해결할 아주 편리한 기능을 제공해준다.
+
+스프링 부트 - 기본 SQL 스크립트를 사용해서 데이터베이스를 초기화하는 기능
+**메모리 DB는 애플리케이션이 종료될 때 함께 사라지기 때문에, 애플리케이션 실행 시점에 데이터베이스**
+**테이블도 새로 만들어주어야 한다.**
+
+J**DBC나 JdbcTemplate를 직접 사용해서 테이블을 생성하는 DDL을 호출**해도 되지만, **너무 불편**하다. 
+**스프링 부트는 SQL 스크립트를 실행해서 애플리케이션 로딩 시점에 데이터베이스를 초기화하는 기능을**
+**제공**한다.
+
+다음 파일을 생성하자.
+
+위치가 src/test 이다. 이 부분을 주의하자. 그리고 파일 이름도 맞아야 한다.
+
+src/test/resources/schema.sql
+
+drop table if exists item CASCADE;
+create table item
+(
+ id bigint generated by default as identity,
+ item_name varchar(10),
+ price integer,
+ quantity integer,
+ primary key (id)
+);
+
+> 참고
+>
+> SQL 스크립트를 사용해서 데이터베이스를 초기화하는 자세한 방법은 다음 스프링 부트 공식 메뉴얼을
+> 참고하자.
+> https://docs.spring.io/spring-boot/docs/current/reference/html/howto.html#howto.datainitialization.using-basic-sql-scripts
+>
+> 실행
+> ItemRepositoryTest 를 실행해보면 드디어 테스트가 정상 수행되는 것을 확인할 수 있다.
+>
+> **로그 확인**
+> 기본 SQL 스크립트가 잘 실행되는지 로그로 확인하려면 다음이 추가되어 있는지 확인하자.
+> src/test/resources/application.properteis
+schema.sql
+
+logging.level.org.springframework.jdbc=debug
+SQL 스트립트 로그
+..init.ScriptUtils : 0 returned as update count for SQL: drop table if 
+exists item CASCADE
+..init.ScriptUtils : 0 returned as update count for SQL: create table item 
+( id bigint generated by default as identity, item_name varchar(10), price 
+integer, quantity integer, primary key (id) )
+
+
+
+## 테스트 - 스프링 부트와 임베디드모드
+
+스프링 부트는 개발자에게 정말 많은 편리함을 제공하는데, 임베디드 데이터베이스에 대한 설정도 기본으로
+제공한다.
+스프링 부트는 데이터베이스에 대한 별다른 설정이 없으면 임베디드 데이터베이스를 사용한다.
+
+
+
+
+
+테스트 - 스프링 부트와 임베디드 모드
+스프링 부트는 개발자에게 정말 많은 편리함을 제공하는데, 임베디드 데이터베이스에 대한 설정도 기본으로
+제공한다.
+스프링 부트는 데이터베이스에 대한 별다른 설정이 없으면 임베디드 데이터베이스를 사용한다.
+앞서 직접 설정했던 메모리 DB용 데이터소스를 주석처리하자.
+package hello.itemservice;
+@Slf4j
+//@Import(MemoryConfig.class)
+//@Import(JdbcTemplateV1Config.class)
+//@Import(JdbcTemplateV2Config.class)
+@Import(JdbcTemplateV3Config.class)
+@SpringBootApplication(scanBasePackages = "hello.itemservice.web")
+public class ItemServiceApplication {
+public static void main(String[] args) {
+SpringApplication.run(ItemServiceApplication.class, args);
+}
+@Bean
+@Profile("local")
+public TestDataInit testDataInit(ItemRepository itemRepository) {
+return new TestDataInit(itemRepository);
+}
+/*
+@Bean
+@Profile("test")
+public DataSource dataSource() {
+log.info("메모리 데이터베이스 초기화");
+DriverManagerDataSource dataSource = new DriverManagerDataSource();
+dataSource.setDriverClassName("org.h2.Driver");
+dataSource.setUrl("jdbc:h2:mem:db;DB_CLOSE_DELAY=-1");
+dataSource.setUsername("sa");
+dataSource.setPassword("");
+return dataSource;
+}
+*/
+}
+그리고 테스트에서 데이터베이스에 접근하는 설정 정보도 주석처리하자.
+
+```
+spring.profiles.active=test
+
+#jdbcTemplate sql log
+logging.level.org.springframework.jdbc=debug
+
+#spring.datasource.url=jdbc:h2:tcp://localhost/~/testcase
+#spring.datasource.username=sa
+```
+
+spring.datasource.url , spring.datasource.username 를 사용하지 않도록 # 을 사용해서
+주석처리 했다.
+
+이렇게 하면 데이터베이스에 접근하는 모든 설정 정보가 사라지게 된다.
+이렇게 별다른 정보가 없으면 스프링 부트는 임베디드 모드로 접근하는 데이터소스( DataSource )를
+만들어서 제공한다. 바로 앞서 우리가 직접 만든 데이터소스와 비슷하다 생각하면 된다.
+
+**실행**
+ItemRepositoryTest 를 실행해보면 테스트가 정상 수행되는 것을 확인할 수 있다.
+참고로 로그를 보면 다음 부분을 확인할 수 있는데 jdbc:h2:mem 뒤에 임의의 데이터베이스 이름이 들어가
+있다. 이것은 혹시라도 여러 데이터소스가 사용될 때 같은 데이터베이스를 사용하면서 발생하는 충돌을
+방지하기 위해 스프링 부트가 임의의 이름을 부여한 것이다.
+conn0: url=jdbc:h2:mem:d8fb3a29-caf7-4b37-9b6c-b0eed9985454
+임베디드 데이터베이스 이름을 스프링 부트가 기본으로 제공하는 jdbc:h2:mem:testdb 로 고정하고
+싶으면 application.properties 에 다음 설정을 추가하면 된다.
+spring.datasource.generate-unique-name=false
+
+> 참고
+> 임베디드 데이터베이스에 대한 스프링 부트의 더 자세한 설정은 다음 공식 메뉴얼을 참고하자.
+> https://docs.spring.io/spring-boot/docs/current/reference/html/
+> data.html#data.sql.datasource.embedded
+
+
+
+
+
+## 데이터 접근 기술 - 
+
+**MyBatis 소개**
+
+
+
+MyBatis는 앞서 설명한 JdbcTemplate보다 더 많은 기능을 제공하는 SQL Mapper 이다.
+기본적으로 JdbcTemplate이 제공하는 대부분의 기능을 제공한다.
+JdbcTemplate과 비교해서 MyBatis의 가장 매력적인 점은 SQL을 XML에 편리하게 작성할 수 있고 또
+동적 쿼리를 매우 편리하게 작성할 수 있다는 점이다.
+먼저 SQL이 여러줄에 걸쳐 있을 때 둘을 비교해보자.
+
+
+
+```
+JdbcTemplate - SQL 여러줄
+      String sql = "update item " +
+      "set item_name=:itemName, price=:price, quantity=:quantity " +
+      "where id=:id";
+      
+      
+      MyBatis - SQL 여러줄
+<update id="update">
+      update item
+      set item_name=#{itemName},
+      price=#{price},
+      quantity=#{quantity}
+      where id = #{id}
+</update>
+
+```
+
+MyBatis는 XML에 작성하기 때문에 라인이 길어져도 문자 더하기에 대한 불편함이 없다.
+
+다음으로 상품을 검색하는 로직을 통해 동적 쿼리를 비교해보자.
+
+```
+JdbcTemplate - 동적 쿼리
+      String sql = "select id, item_name, price, quantity from item";
+//동적 쿼리
+      if (StringUtils.hasText(itemName) || maxPrice != null) {
+      sql += " where";
+      }
+      boolean andFlag = false;
+      if (StringUtils.hasText(itemName)) {
+      sql += " item_name like concat('%',:itemName,'%')";
+      andFlag = true;
+      }
+      if (maxPrice != null) {
+      if (andFlag) {
+      sql += " and";
+      }
+      sql += " price <= :maxPrice";
+      }
+      log.info("sql={}", sql);
+      return template.query(sql, param, itemRowMapper());
+      
+      
+      MyBatis - 동적 쿼리
+<select id="findAll" resultType="Item">
+      select id, item_name, price, quantity
+      from item
+<where>
+<if test="itemName != null and itemName != ''">
+      and item_name like concat('%',#{itemName},'%')
+</if>
+<if test="maxPrice != null">
+      and price &lt;= #{maxPrice}
+</if>
+</where>
+</select>
+
+```
+
+
+
+JdbcTemplate은 자바 코드로 직접 동적 쿼리를 작성해야 한다. 반면에 MyBatis는 동적 쿼리를 매우
+편리하게 작성할 수 있는 다양한 기능들을 제공해준다.
+
+**설정의 장단점**
+JdbcTemplate은 스프링에 내장된 기능이고, 별도의 설정없이 사용할 수 있다는 장점이 있다. 반면에
+MyBatis는 약간의 설정이 필요하다.
+
+
+
+**정리**
+프로젝트에서 동적 쿼리와 복잡한 쿼리가 많다면 MyBatis를 사용하고, 단순한 쿼리들이 많으면
+JdbcTemplate을 선택해서 사용하면 된다. 물론 둘을 함께 사용해도 된다. 하지만 MyBatis를 선택했다면
+그것으로 충분할 것이다.
+
+
+
+
+
+> 참고
+> 강의에서는 MyBatis의 기능을 하나하나를 자세하게 다루지는 않는다. MyBatis를 왜 사용하는지, 그리고
+> 주로 사용하는 기능 위주로 다룰 것이다. 그래도 이 강의를 듣고 나면 MyBatis로 개발을 할 수 있게 되고
+> 추가로 필요한 내용을 공식 사이트에서 찾아서 사용할 수 있게 될 것이다.
+> MyBatis는 기능도 단순하고 또 공식 사이트가 한글로 잘 번역되어 있어서 원하는 기능을 편리하게 찾아볼
+> 수 있다.
+>
+> 공식 사이트
+> https://mybatis.org/mybatis-3/ko/index.html
+
+
+
+## MyBatis - 설정
+
+
+
+mybatis-spring-boot-starter 라이브러리를 사용하면 MyBatis를 스프링과 통합하고, 설정도 아주
+간단히 할 수 있다.
+mybatis-spring-boot-starter 라이브러리를 사용해서 간단히 설정하는 방법을 알아보자.
+build.gradle 에 다음 의존 관계를 추가한다.
+
+//MyBatis 추가
+implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:2.2.0'
+
+
+
+참고로 뒤에 버전 정보가 붙는 이유는 스프링 부트가 버전을 관리해주는 공식 라이브러리가 아니기
+때문이다. 스프링 부트가 버전을 관리해주는 경우 버전 정보를 붙이지 않아도 최적의 버전을 자동으로
+찾아준다.
+
+
+
+build.gradle - 의존관계 전체
+dependencies {
+implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
+implementation 'org.springframework.boot:spring-boot-starter-web'
+//JdbcTemplate 추가
+implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+//MyBatis 추가
+implementation 'org.mybatis.spring.boot:mybatis-spring-boot-starter:2.2.0'
+//H2 데이터베이스 추가
+runtimeOnly 'com.h2database:h2'
+compileOnly 'org.projectlombok:lombok'
+annotationProcessor 'org.projectlombok:lombok'
+testImplementation 'org.springframework.boot:spring-boot-starter-test'
+//테스트에서 lombok 사용
+testCompileOnly 'org.projectlombok:lombok'
+testAnnotationProcessor 'org.projectlombok:lombok'
+}
+
+다음과 같은 라이브러리가 추가된다.
+
+mybatis-spring-boot-starter : MyBatis를 스프링 부트에서 편리하게 사용할 수 있게 시작하는 라이브러리
+
+mybatis-spring-boot-autoconfigure : MyBatis와 스프링 부트 설정 라이브러리
+mybatis-spring : MyBatis와 스프링을 연동하는 라이브러리
+mybatis : MyBatis 라이브러리
+
+라이브러리 추가는 완료되었다 다음으로 설정을 해보자.
+
+**설정**
+
+application.properties 에 다음 설정을 추가하자. #MyBatis 를 참고하면 된다.
+주의! 웹 애플리케이션을 실행하는 main , 테스트를 실행하는 test 각 위치의
+
+application.properties 를 모두 수정해주어야 한다. 설정을 변경해도 반영이 안된다면 이 부분을 꼭! 
+
+확인하자.
+
+
+
+```
+main - application.properties
+
+spring.profiles.active=local
+spring.datasource.url=jdbc:h2:tcp://localhost/~/test
+spring.datasource.username=sa
+logging.level.org.springframework.jdbc=debug
+#MyBatis
+mybatis.type-aliases-package=hello.itemservice.domain
+mybatis.configuration.map-underscore-to-camel-case=true
+logging.level.hello.itemservice.repository.mybatis=trace
+
+test - application.properties
+
+spring.profiles.active=test
+
+#spring.datasource.url=jdbc:h2:tcp://localhost/~/testcase
+#spring.datasource.username=sa
+logging.level.org.springframework.jdbc=debug
+#MyBatis
+mybatis.type-aliases-package=hello.itemservice.domain
+mybatis.configuration.map-underscore-to-camel-case=true
+logging.level.hello.itemservice.repository.mybatis=trace
+mybatis.type-aliases-package
+```
+
+
+
+마이바티스에서 타입 정보를 사용할 때는 패키지 이름을 적어주어야 하는데, 여기에 명시하면 패키지
+이름을 생략할 수 있다.
+
+지정한 패키지와 그 하위 패키지가 자동으로 인식된다.
+여러 위치를 지정하려면 , , ; 로 구분하면 된다.
+
+mybatis.configuration.map-underscore-to-camel-case
+JdbcTemplate의 BeanPropertyRowMapper 에서 처럼 언더바를 카멜로 자동 변경해주는 기능을
+활성화 한다. 바로 다음에 설명하는 관례의 불일치 내용을 참고하자.
+
+logging.level.hello.itemservice.repository.mybatis=trace
+MyBatis에서 실행되는 쿼리 로그를 확인할 수 있다.
+
+
+
+**관례의 불일치**
+
+자바 객체에는 주로 카멜( camelCase ) 표기법을 사용한다. itemName 처럼 중간에 낙타 봉이 올라와 있는
+표기법이다.
+
+반면에 관계형 데이터베이스에서는 주로 언더스코어를 사용하는 snake_case 표기법을 사용한다.
+item_name 처럼 중간에 언더스코어를 사용하는 표기법이다.
+
+이렇게 관례로 많이 사용하다 보니 map-underscore-to-camel-case 기능을 활성화 하면 언더스코어
+표기법을 카멜로 자동 변환해준다. 따라서 DB에서 select item_name 으로 조회해도 객체의
+itemName ( setItemName() ) 속성에 값이 정상 입력된다.
+
+정리하면 해당 옵션을 켜면 snake_case 는 자동으로 해결되니 그냥 두면 되고, 컬럼 이름과 객체 이름이
+완전히 다른 경우에는 조회 SQL에서 별칭을 사용하면 된다.
+
+
+
+예) 
+DB select item_name
+객체 name
+별칭을 통한 해결방안
+select item_name as name
+
+
+
+**MyBatis 적용1 - 기본**
+
+****이제부터 본격적으로 MyBatis를 사용해서 데이터베이스에 데이터를 저장해보자.
+
+XML에 작성한다는 점을 제외하고는 JDBC 반복을 줄여준다는 점에서 기존 JdbcTemplate과 거의
+유사하다
+
+```
+package hello.itemservice.repository.mybatis;
+
+import hello.itemservice.domain.Item;
+import hello.itemservice.repository.ItemSearchCond;
+import hello.itemservice.repository.ItemUpdateDto;
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
+import java.util.Optional;
+
+@Mapper
+public interface ItemMapper {
+
+    void save(Item item);
+
+    void update(@Param("id") Long id, @Param("updateParam")ItemUpdateDto updateParam);
+
+    List<Item> findAll(ItemSearchCond itemSearch);
+
+    Optional<Item> findById(Long id);
+}
+
+```
+
+마이바티스 매핑 XML을 호출해주는 매퍼 인터페이스이다.
+
+이 인터페이스에는 @Mapper 애노테이션을 붙여주어야 한다. 그래야 MyBatis에서 인식할 수 있다.
+
+이 인터페이스의 메서드를 호출하면 다음에 보이는 xml 의 해당 SQL을 실행하고 결과를 돌려준다.
+
+ItemMapper 인터페이스의 구현체에 대한 부분은 뒤에 별도로 설명한다.
+
+이제 같은 위치에 실행할 SQL이 있는 XML 매핑 파일을 만들어주면 된다.
+
+참고로 자바 코드가 아니기 때문에 src/main/resources 하위에 만들되, 패키지 위치는 맞추어 주어야
+한다
+
+
+
+```
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="hello.itemservice.repository.mybatis.ItemMapper">
+    <insert id="save" useGeneratedKeys="true" keyProperty="id">
+        insert into item (item_name, price, quantity)
+        values (#{itemName}, #{price}, #{quantity})
+    </insert>
+
+    <update id="update">
+        update item
+        set item_name=#{updateParam.itemName},
+            price=#{updateParam.price},
+            quantity=${updateParam.quantity}
+        where id = ${id}
+    </update>
+
+    <select id="findAll">
+        select id, item_name, price, quantity
+        from item
+        <where>
+            <if test="itemName != null and itemName != ''">
+                and item_name like concat('%', #{itemName}, '%')
+            </if>
+            <if test="maxprice != null">
+                and price $lt;= #{maxPrice}
+            </if>
+        </where>
+    </select>
+
+    <select id="findById" resultType="Item">
+        select id, item_name, price, quantity
+        from item
+        where id = ${id}
+    </select>
+</mapper>
+
+```
+
+
+
+namespace : 앞서 만든 매퍼 인터페이스를 지정하면 된다.
+주의! 경로와 파일 이름에 주의하자.
+> 참고 - XML 파일 경로 수정하기
+> XML 파일을 원하는 위치에 두고 싶으면 application.properties 에 다음과 같이 설정하면 된다.
+> mybatis.mapper-locations=classpath:mapper/**/*.xml
+>
+> 이렇게 하면 resources/mapper 를 포함한 그 하위 폴더에 있는 XML을 XML 매핑 파일로 인식한다. 이
+> 경우 파일 이름은 자유롭게 설정해도 된다.
+>
+> 참고로 테스트의 application.properties 파일도 함께 수정해야 테스트를 실행할 때 인식할 수 있다.
+>
+> 
+
+**insert - save**
+
+```
+void save(Item item);
+
+
+<insert id="save" useGeneratedKeys="true" keyProperty="id">
+insert into item (item_name, price, quantity)
+values (#{itemName}, #{price}, #{quantity})
+</insert>
+```
+
+Insert SQL은  를 사용하면 된다.
+
+id 에는 매퍼 인터페이스에 설정한 메서드 이름을 지정하면 된다. 여기서는 메서드 이름이 save() 이므로
+save 로 지정하면 된다.
+파라미터는 #{} 문법을 사용하면 된다. 그리고 매퍼에서 넘긴 객체의 프로퍼티 이름을 적어주면 된다.
+
+샵{} 문법을 사용하면 PreparedStatement 를 사용한다. JDBC의 ? 를 치환한다 생각하면 된다.
+
+useGeneratedKeys 는 데이터베이스가 키를 생성해 주는 IDENTITY 전략일 때 사용한다. keyProperty
+는 생성되는 키의 속성 이름을 지정한다. Insert가 끝나면 item 객체의 id 속성에 생성된 값이 입력된다.
+
+
+
+**update - update**
+
+```
+  import org.apache.ibatis.annotations.Param;
+  void update(@Param("id") Long id, @Param("updateParam") ItemUpdateDto
+  updateParam);
+        
+        
+<update id="update">
+update item
+set item_name=#{updateParam.itemName},
+price=#{updateParam.price},
+quantity=#{updateParam.quantity}
+where id = #{id}
+</update>
+```
+
+Update SQL은  를 사용하면 된다.
+여기서는 파라미터가 Long id , ItemUpdateDto updateParam 으로 2개이다. 파라미터가 1개만 있으면
+@Param 을 지정하지 않아도 되지만, 파라미터가 2개 이상이면 @Param 으로 이름을 지정해서 파라미터를
+구분해야 한다.
+
+
+
+**select - findById**
+
+```
+Optional<Item> findById(Long id);
+<select id="findById" resultType="Item">
+    select id, item_name, price, quantity
+    from item
+    where id = #{id}
+</select>
+```
+
+Select SQL은  를 사용하면 된다.
+resultType 은 반환 타입을 명시하면 된다. 여기서는 결과를 Item 객체에 매핑한다.
+앞서 application.properties 에 mybatis.type-aliasespackage=hello.itemservice.domain 속성을 지정한 덕분에 모든 패키지 명을 다 적지는 않아도
+된다. 그렇지 않으면 모든 패키지 명을 다 적어야 한다.
+JdbcTemplate의 BeanPropertyRowMapper 처럼 SELECT SQL의 결과를 편리하게 객체로 바로
+변환해준다.
+mybatis.configuration.map-underscore-to-camel-case=true 속성을 지정한 덕분에
+언더스코어를 카멜 표기법으로 자동으로 처리해준다. ( item_name itemName )
+자바 코드에서 반환 객체가 하나이면 Item , Optional 과 같이 사용하면 되고, 반환 객체가 하나
+이상이면 컬렉션을 사용하면 된다. 주로 List 를 사용한다. 다음을 참고하자.
+
+
+
+**select - findAll**
+
+```
+      List<Item> findAll(ItemSearchCond itemSearch);
+
+
+<select id="findAll" resultType="Item">
+    select id, item_name, price, quantity
+    from item
+    <where>
+        <if test="itemName != null and itemName != ''">
+            and item_name like concat('%',#{itemName},'%')
+        </if>
+        <if test="maxPrice != null">
+            and price &lt;= #{maxPrice}
+        </if>
+    </where>
+</select>
+```
+
+
+
+Mybatis는  ,  같은 동적 쿼리 문법을 통해 편리한 동적 쿼리를 지원한다.
+ 는 해당 조건이 만족하면 구문을 추가한다.
+ 은 적절하게 where 문장을 만들어준다.
+예제에서  가 모두 실패하게 되면 SQL where 를 만들지 않는다.
+예제에서  가 하나라도 성공하면 처음 나타나는 **and 를 where 로 변환**해준다.
+
+
+
+**XML 특수문자**
+그런데 가격을 비교하는 조건을 보자
+and price <= #{maxPrice}
+여기에 보면 <= 를 사용하지 않고 <= 를 사용한 것을 확인할 수 있다. 그 이유는 XML에서는 데이터
+영역에 < , > 같은 특수 문자를 사용할 수 없기 때문이다. 이유는 간단한데, XML에서 TAG가 시작하거나
+종료할 때 < , > 와 같은 특수문자를 사용하기 때문이다.
+
+```
+< : &lt;
+> : &gt;
+& : &amp;
+```
+
+> 다른 해결 방안으로는 XML에서 지원하는 CDATA 구문 문법을 사용하는 것이다. 이 구문 안에서는
+> 특수문자를 사용할 수 있다. 대신 이 구문 안에서는 XML TAG가 단순 문자로 인식되기 때문에  ,
+>  등이 적용되지 않는다.**
+
+
+
+**XML CDATA 사용**
+
+```
+<select id="findAll" resultType="Item">
+    select id, item_name, price, quantity
+    from item
+    <where>
+        <if test="itemName != null and itemName != ''">
+            and item_name like concat('%',#{itemName},'%')
+        </if>
+        <if test="maxPrice != null">
+            <![CDATA[
+ and price <= #{maxPrice}
+ ]]>
+        </if>
+    </where>
+</select>
+
+```
+
+ 
+
+특수문자와 CDATA 각각 상황에 따른 장단점이 있으므로 원하는 방법을 그때그때 선택하면 된다
+
+```
+package hello.itemservice.repository.mybatis;
+
+import hello.itemservice.domain.Item;
+import hello.itemservice.repository.ItemRepository;
+import hello.itemservice.repository.ItemSearchCond;
+import hello.itemservice.repository.ItemUpdateDto;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+
+@Repository
+@RequiredArgsConstructor
+public class MyBatisItemRepository implements ItemRepository {
+
+    private final ItemMapper itemMapper;
+
+
+    @Override
+    public Item save(Item item) {
+        itemMapper.save(item);
+
+        return item;
+    }
+
+    @Override
+    public void update(Long itemId, ItemUpdateDto updateParam) {
+        itemMapper.update(itemId, updateParam);
+
+    }
+
+    @Override
+    public Optional<Item> findById(Long id) {
+        return itemMapper.findById(id);
+    }
+
+    @Override
+    public List<Item> findAll(ItemSearchCond cond) {
+        return itemMapper.findAll(cond);
+    }
+}
+
+```
+
+```
+package hello.itemservice.config;
+
+import hello.itemservice.domain.Item;
+import hello.itemservice.repository.ItemRepository;
+import hello.itemservice.repository.jdbctemplate.JdbcTemplateItemRepositoryV3;
+import hello.itemservice.repository.mybatis.ItemMapper;
+import hello.itemservice.repository.mybatis.MyBatisItemRepository;
+import hello.itemservice.service.ItemService;
+import hello.itemservice.service.ItemServiceV1;
+import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import javax.sql.DataSource;
+
+@Configuration
+@RequiredArgsConstructor
+public class MyBatisConfig {
+
+    private final ItemMapper itemMapper; //스프링 부트가 자동으로 dataSource 설정해줌 대신 application.properties에 설정값 넣어야함
+
+
+    @Bean
+    public ItemService itemService() {
+        return new ItemServiceV1(itemRepository());
+    }
+
+    @Bean
+    public ItemRepository itemRepository() {
+        return new MyBatisItemRepository(itemMapper);
+    }
+}
+
+```
+
+
+
+## MyBatis 적용3 - 분석
+
+
+
+생각해보면 지금까지 진행한 내용중에 약간 이상한 부분이 있다.
+ItemMapper 매퍼 인터페이스의 구현체가 없는데 어떻게 동작한 것일까?
+ItemMapper 인터페이스
+@Mapper
+public interface ItemMapper {
+ void save(Item item);
+ void update(@Param("id") Long id, @Param("updateParam") ItemUpdateDto 
+updateParam);
+ List findAll(ItemSearchCond itemSearch);
+ Optional findById(Long id);
+}
+이 부분은 MyBatis 스프링 연동 모듈에서 자동으로 처리해주는데 다음과 같다.
+
+**설정 원리**
+
+![MyBatis ItemMapper](C:\Users\User\Desktop\Spring_2022\MyBatis ItemMapper.JPG)
+
+실행해서 주입 받은 ItemMapper 의 클래스를 출력해보자.
+실행 결과
+itemMapper class=class com.sun.proxy.$Proxy66
+출력해보면 JDK 동적 프록시가 적용된 것을 확인할 수 있다.
+> **참고**
+>
+> 동적 프록시 기술은 스프링 핵심원리 - 고급편에서 자세히 설명한다.
+>
+> **매퍼 구현체**
+> 마이바티스 스프링 연동 모듈이 만들어주는 ItemMapper 의 구현체 덕분에 인터페이스 만으로 편리하게
+> XML의 데이터를 찾아서 호출할 수 있다.
+> 원래 마이바티스를 사용하려면 더 번잡한 코드를 거쳐야 하는데, 이런 부분을 인터페이스 하나로 매우
+> 깔끔하고 편리하게 사용할 수 있다.
+> 매퍼 구현체는 예외 변환까지 처리해준다. MyBatis에서 발생한 예외를 스프링 예외 추상화인
+> DataAccessException 에 맞게 변환해서 반환해준다. JdbcTemplate이 제공하는 예외 변환 기능을
+> 여기서도 제공한다고 이해하면 된다.
+>
+> **정리**
+> 매퍼 구현체 덕분에 마이바티스를 스프링에 편리하게 통합해서 사용할 수 있다.
+> 매퍼 구현체를 사용하면 스프링 예외 추상화도 함께 적용된다.
+> 마이바티스 스프링 연동 모듈이 많은 부분을 자동으로 설정해주는데, 데이터베이스 커넥션, 트랜잭션과
+> 관련된 기능도 마이바티스와 함께 연동하고, 동기화해준다.
+>
+> **참고**
+> 마이바티스 스프링 연동 모듈이 자동으로 등록해주는 부분은 MybatisAutoConfiguration 클래스를
+> 참고하자
+
+
+
+## MyBatis 기능 정리 1 - 적 쿼리
+
+MyBatis에서 자주 사용하는 주요 기능을 공식 메뉴얼이 제공하는 예제를 통해 간단히 정리해보자.
+MyBatis 공식 메뉴얼: https://mybatis.org/mybatis-3/ko/index.html
+MyBatis 스프링 공식 메뉴얼: https://mybatis.org/spring/ko/index.html
+동적 SQL
+마이바티스가 제공하는 최고의 기능이자 마이바티스를 사용하는 이유는 바로 동적 SQL 기능 때문이다.
+동적 쿼리를 위해 제공되는 기능은 다음과 같다.
+if
+choose (when, otherwise)
+trim (where, set)
+foreach
+
+공식 메뉴얼에서 제공하는 예제를 통해 동적 SQL을 알아보자
+
+
+
+```
+if
+<select id="findActiveBlogWithTitleLike"
+        resultType="Blog">
+        SELECT * FROM BLOG
+        WHERE state = ‘ACTIVE’
+<if test="title != null">
+        AND title like #{title}
+</if>
+</select>
+        해당 조건에 따라 값을 추가할지 말지 판단한다.
+        내부의 문법은 OGNL을 사용한다. 자세한 내용은 OGNL을 검색해보자.
+        choose, when, otherwise
+<select id="findActiveBlogLike"
+        resultType="Blog">
+        SELECT * FROM BLOG WHERE state = ‘ACTIVE’
+<choose>
+<when test="title != null">
+        AND title like #{title}
+</when>
+<when test="author != null and author.name != null">
+        AND author_name like #{author.name}
+</when>
+<otherwise>
+ AND featured = 1
+</otherwise>
+</choose>
+</select>
+        자바의 switch 구문과 유사한 구문도 사용할 수 있다.
+        trim, where, set
+<select id="findActiveBlogLike"
+        resultType="Blog">
+        SELECT * FROM BLOG
+        WHERE
+<if test="state != null">
+        state = #{state}
+</if>
+<if test="title != null">
+        AND title like #{title}
+</if>
+<if test="author != null and author.name != null">
+        AND author_name like #{author.name}
+</if>
+</select>
+        이 예제의 문제점은 문장을 모두 만족하지 않을 때 발생한다.
+        SELECT * FROM BLOG
+        WHERE
+        title 만 만족할 때도 문제가 발생한다.
+        SELECT * FROM BLOG
+        WHERE
+        AND title like ‘someTitle’
+        결국 WHERE 문을 언제 넣어야 할지 상황에 따라서 동적으로 달라지는 문제가 있다.
+<where> 를 사용하면 이런 문제를 해결할 수 있다.
+<where> 사용
+<select id="findActiveBlogLike"
+        resultType="Blog">
+        SELECT * FROM BLOG
+<where>
+<if test="state != null">
+        state = #{state}
+</if>
+<if test="title != null">
+        AND title like #{title}
+</if>
+<if test="author != null and author.name != null">
+        AND author_name like #{author.name}
+</if>
+</where>
+</select>
+<where> 는 문장이 없으면 where 를 추가하지 않는다. 문장이 있으면 where 를 추가한다. 만약 and 가
+        먼저 시작된다면 and 를 지운다.
+        참고로 다음과 같이 trim 이라는 기능으로 사용해도 된다. 이렇게 정의하면 <where> 와 같은 기능을
+        수행한다.
+<trim prefix="WHERE" prefixOverrides="AND |OR ">
+        ...
+</trim>
+        foreach
+<select id="selectPostIn" resultType="domain.blog.Post">
+        SELECT *
+        FROM POST P
+<where>
+<foreach item="item" index="index" collection="list"
+        open="ID in (" separator="," close=")" nullable="true">
+        #{item}
+        </foreach>
+        </where>
+        </select>
+        컬렉션을 반복 처리할 때 사용한다. where in (1,2,3,4,5,6) 와 같은 문장을 쉽게 완성할 수 있다.
+        파라미터로 List 를 전달하면 된다.
+        > 참고
+        > 동적 쿼리에 대한 자세한 내용은 다음을 참고하자.
+        > https://mybatis.org/mybatis-3/ko/dynamic-sql.html
+```
+
+
+
+## MyBatis 기능 정리 2 - 기타 기능
+
+```
+   애노테이션으로 SQL 작성
+        다음과 같이 XML 대신에 애노테이션에 SQL을 작성할 수 있다.
+@Select("select id, item_name, price, quantity from item where id=#{id}")
+Optional<Item> findById(Long id);
+@Insert , @Update , @Delete , @Select 기능이 제공된다.
+        이 경우 XML에는 <select id="findById"> ~ </select> 는 제거해야 한다.
+        동적 SQL이 해결되지 않으므로 간단한 경우에만 사용한다.
+        애노테이션으로 SQL 작성에 대한 더 자세한 내용은 다음을 참고하자.
+        https://mybatis.org/mybatis-3/ko/java-api.html
+        문자열 대체(String Substitution)
+        #{} 문법은 ?를 넣고 파라미터를 바인딩하는 PreparedStatement 를 사용한다.
+        때로는 파라미터 바인딩이 아니라 문자 그대로를 처리하고 싶은 경우도 있다. 이때는 ${} 를 사용하면 된다.
+        다음 예제를 보자
+        ORDER BY ${columnName}
+@Select("select * from user where ${column} = #{value}")
+User findByColumn(@Param("column") String column, @Param("value") String
+        value);
+        주의
+        ${} 를 사용하면 SQL 인젝션 공격을 당할 수 있다. 따라서 가급적 사용하면 안된다. 사용하더라도 매우
+        주의깊게 사용해야 한다.
+        재사용 가능한 SQL 조각
+<sql> 을 사용하면 SQL 코드를 재사용 할 수 있다.
+<sql id="userColumns"> ${alias}.id,${alias}.username,${alias}.password </sql>
+<select id="selectUsers" resultType="map">
+        select
+<include refid="userColumns"><property name="alias" value="t1"/></include>,
+<include refid="userColumns"><property name="alias" value="t2"/></include>
+        from some_table t1
+        cross join some_table t2
+</select>
+<include> 를 통해서 <sql> 조각을 찾아서 사용할 수 있다.
+<sql id="sometable">
+        ${prefix}Table
+</sql>
+<sql id="someinclude">
+        from
+<include refid="${include_target}"/>
+</sql>
+<select id="select" resultType="map">
+        select
+        field1, field2, field3
+<include refid="someinclude">
+<property name="prefix" value="Some"/>
+<property name="include_target" value="sometable"/>
+</include>
+</select>
+        프로퍼티 값을 전달할 수 있고, 해당 값은 내부에서 사용할 수 있다.
+        Result Maps
+        결과를 매핑할 때 테이블은 user_id 이지만 객체는 id 이다.
+        이 경우 컬럼명과 객체의 프로퍼티 명이 다르다. 그러면 다음과 같이 별칭( as )을 사용하면 된다.
+<select id="selectUsers" resultType="User">
+        select
+        user_id as "id",
+        user_name as "userName",
+        hashed_password as "hashedPassword"
+        from some_table
+        where id = #{id}
+</select>
+        별칭을 사용하지 않고도 문제를 해결할 수 있는데, 다음과 같이 resultMap 을 선언해서 사용하면 된다.
+<resultMap id="userResultMap" type="User">
+<id property="id" column="user_id" />
+<result property="username" column="username"/>
+<result property="password" column="password"/>
+</resultMap>
+<select id="selectUsers" resultMap="userResultMap">
+        select user_id, user_name, hashed_password
+        from some_table
+        where id = #{id}
+</select>
+        복잡한 결과매핑
+        MyBatis도 매우 복잡한 결과에 객체 연관관계를 고려해서 데이터를 조회하는 것이 가능하다.
+        이때는 <association> , <collection> 등을 사용한다.
+        이 부분은 성능과 실효성에서 측면에서 많은 고민이 필요하다.
+        JPA는 객체와 관계형 데이터베이스를 ORM 개념으로 매핑하기 때문에 이런 부분이 자연스럽지만,
+        MyBatis에서는 들어가는 공수도 많고, 성능을 최적화하기도 어렵다. 따라서 해당기능을 사용할 때는
+        신중하게 사용해야 한다.
+        해당 기능에 대한 자세한 내용은 공식 메뉴얼을 참고하자.
+        > 참고
+        > 결과 매핑에 대한 자세한 내용은 다음을 참고하자.
+        > https://mybatis.org/mybatis-3/ko/sqlmap-xml.html#Result_Maps
+```
+

@@ -126,6 +126,7 @@ public class JdbcTemplateItemRepositoryV3 implements ItemRepository {
             item.setQuantity(rs.getInt("quantity"));
             return item;
         });*/
+
         return BeanPropertyRowMapper.newInstance(Item.class);
     }
 }
