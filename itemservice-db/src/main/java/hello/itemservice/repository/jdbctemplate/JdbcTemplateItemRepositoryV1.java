@@ -13,28 +13,18 @@ import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.util.StringUtils;
 
 import javax.sql.DataSource;
-import java.security.Key;
 import java.sql.PreparedStatement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-/** /
+/**
  * JdbcTemplate
- *
  */
 @Slf4j
 public class JdbcTemplateItemRepositoryV1 implements ItemRepository {
 
     private final JdbcTemplate template;
-
-    // DataSource란?
-    // DataSource 는 커넥션을 획득하는 방법을 추상화 하는 인터페이스
-
-    //DataSource 핵심 기능만 축약
-    //public interface DataSource {
-    // Connection getConnection() throws SQLException;
-    //}
 
     public JdbcTemplateItemRepositoryV1(DataSource dataSource) {
         this.template = new JdbcTemplate(dataSource);
@@ -55,8 +45,6 @@ public class JdbcTemplateItemRepositoryV1 implements ItemRepository {
 
         long key = keyHolder.getKey().longValue();
         item.setId(key);
-
-
         return item;
     }
 
@@ -74,12 +62,11 @@ public class JdbcTemplateItemRepositoryV1 implements ItemRepository {
     public Optional<Item> findById(Long id) {
         String sql = "select id, item_name, price, quantity from item where id = ?";
         try {
-            Item item = template.queryForObject(sql, itemRowMapper(), id); // 하나 가져올때 queryForObject
-            return Optional.of(item); // Optional.ofNullable 널도 허용
+            Item item = template.queryForObject(sql, itemRowMapper(), id);
+            return Optional.of(item);
         } catch (EmptyResultDataAccessException e) {
-            return Optional.empty(); // 데이터 결과가 없다.
+            return Optional.empty();
         }
-
     }
 
     @Override
@@ -92,6 +79,7 @@ public class JdbcTemplateItemRepositoryV1 implements ItemRepository {
         if (StringUtils.hasText(itemName) || maxPrice != null) {
             sql += " where";
         }
+
         boolean andFlag = false;
         List<Object> param = new ArrayList<>();
         if (StringUtils.hasText(itemName)) {
@@ -99,6 +87,7 @@ public class JdbcTemplateItemRepositoryV1 implements ItemRepository {
             param.add(itemName);
             andFlag = true;
         }
+
         if (maxPrice != null) {
             if (andFlag) {
                 sql += " and";
@@ -106,6 +95,7 @@ public class JdbcTemplateItemRepositoryV1 implements ItemRepository {
             sql += " price <= ?";
             param.add(maxPrice);
         }
+
         log.info("sql={}", sql);
         return template.query(sql, itemRowMapper(), param.toArray());
     }
@@ -121,5 +111,3 @@ public class JdbcTemplateItemRepositoryV1 implements ItemRepository {
         });
     }
 }
-
-

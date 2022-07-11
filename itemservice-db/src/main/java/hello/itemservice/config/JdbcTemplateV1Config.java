@@ -15,8 +15,7 @@ import javax.sql.DataSource;
 @RequiredArgsConstructor
 public class JdbcTemplateV1Config {
 
-    private final DataSource dataSource; //스프링 부트가 자동으로 dataSource 설정해줌 대신 application.properties에 설정값 넣어야함
-
+    private final DataSource dataSource;
 
     @Bean
     public ItemService itemService() {
@@ -27,4 +26,5 @@ public class JdbcTemplateV1Config {
     public ItemRepository itemRepository() {
         return new JdbcTemplateItemRepositoryV1(dataSource);
     }
+
 }

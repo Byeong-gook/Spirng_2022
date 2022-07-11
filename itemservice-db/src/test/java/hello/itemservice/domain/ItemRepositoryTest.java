@@ -112,4 +112,3 @@ class ItemRepositoryTest {
         assertThat(result).containsExactly(items);
     }
 }
-

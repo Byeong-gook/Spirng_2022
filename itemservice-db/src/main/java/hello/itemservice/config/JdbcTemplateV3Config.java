@@ -1,7 +1,6 @@
 package hello.itemservice.config;
 
 import hello.itemservice.repository.ItemRepository;
-import hello.itemservice.repository.jdbctemplate.JdbcTemplateItemRepositoryV2;
 import hello.itemservice.repository.jdbctemplate.JdbcTemplateItemRepositoryV3;
 import hello.itemservice.service.ItemService;
 import hello.itemservice.service.ItemServiceV1;
@@ -15,8 +14,7 @@ import javax.sql.DataSource;
 @RequiredArgsConstructor
 public class JdbcTemplateV3Config {
 
-    private final DataSource dataSource; //스프링 부트가 자동으로 dataSource 설정해줌 대신 application.properties에 설정값 넣어야함
-
+    private final DataSource dataSource;
 
     @Bean
     public ItemService itemService() {
@@ -27,4 +25,5 @@ public class JdbcTemplateV3Config {
     public ItemRepository itemRepository() {
         return new JdbcTemplateItemRepositoryV3(dataSource);
     }
+
 }
